@@ -36,6 +36,7 @@ param workspaceName = 'ws-avd-poc'
 param workspaceFriendlyName = 'AVD POC Workspace'
 
 // Compute
+param deployTemplateVm = true
 param vmSize = 'Standard_D4s_v5'
 param vmAdminUsername = 'avdadmin'
 param vmAdminPassword = '' // to be provided at deployment time
@@ -46,6 +47,7 @@ param enableTrustedLaunch = true
 param vmName = 'avdtemplate01'
 
 // Storage
+param deployStorage = true
 param storageAccountName = ''
 param fslogixShareName = 'fslogixprofiles'
 param enableAadKerberosAuth = true

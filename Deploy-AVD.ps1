@@ -306,61 +306,146 @@ function Get-DeploymentParameters {
     # ── Compute / Image Selection ──
     Write-Section "Compute Configuration"
 
-    Write-Host "Fetching available Windows 11 image offers for '$($params.location)'..." -ForegroundColor Yellow
-    $offers = @(az vm image list-offers `
-        --location $params.location `
-        --publisher MicrosoftWindowsDesktop `
-        --query "[?contains(name, 'windows-11')].name" -o json 2>$null | ConvertFrom-Json)
+    $params.deployTemplateVm = $true
+    if (-not $isGreenfield) {
+        $params.deployTemplateVm = Read-YesNo "Build a new template VM?" $true
+    }
 
-    if ($offers -and $offers.Count -gt 0) {
-        Write-Host "`nAvailable Windows 11 Offers:"
-        for ($i = 0; $i -lt $offers.Count; $i++) {
-            Write-Host "  [$($i + 1)] $($offers[$i])"
-        }
-        $offerIdx      = Read-PromptWithDefault "`nSelect offer (number)" "1"
-        $selectedOffer = $offers[[int]$offerIdx - 1]
-        $params.vmImageOffer = $selectedOffer
-
-        Write-Host "`nFetching SKUs for '$selectedOffer'..." -ForegroundColor Yellow
-        $skus = @(az vm image list-skus `
+    if ($params.deployTemplateVm) {
+        Write-Host "Fetching available Windows 11 image offers for '$($params.location)'..." -ForegroundColor Yellow
+        $offers = @(az vm image list-offers `
             --location $params.location `
             --publisher MicrosoftWindowsDesktop `
-            --offer $selectedOffer `
-            --query "[].name" -o json 2>$null | ConvertFrom-Json)
+            --query "[?contains(name, 'windows-11')].name" -o json 2>$null | ConvertFrom-Json)
 
-        if ($skus -and $skus.Count -gt 0) {
-            Write-Host "`nAvailable SKUs:"
-            for ($i = 0; $i -lt $skus.Count; $i++) {
-                Write-Host "  [$($i + 1)] $($skus[$i])"
+        if ($offers -and $offers.Count -gt 0) {
+            Write-Host "`nAvailable Windows 11 Offers:"
+            for ($i = 0; $i -lt $offers.Count; $i++) {
+                Write-Host "  [$($i + 1)] $($offers[$i])"
             }
-            $skuIdx           = Read-PromptWithDefault "`nSelect SKU (number)" "1"
-            $params.vmImageSku = $skus[[int]$skuIdx - 1]
+            $offerIdx      = Read-PromptWithDefault "`nSelect offer (number)" "1"
+            $selectedOffer = $offers[[int]$offerIdx - 1]
+            $params.vmImageOffer = $selectedOffer
+
+            Write-Host "`nFetching SKUs for '$selectedOffer'..." -ForegroundColor Yellow
+            $skus = @(az vm image list-skus `
+                --location $params.location `
+                --publisher MicrosoftWindowsDesktop `
+                --offer $selectedOffer `
+                --query "[].name" -o json 2>$null | ConvertFrom-Json)
+
+            if ($skus -and $skus.Count -gt 0) {
+                Write-Host "`nAvailable SKUs:"
+                for ($i = 0; $i -lt $skus.Count; $i++) {
+                    Write-Host "  [$($i + 1)] $($skus[$i])"
+                }
+                $skuIdx           = Read-PromptWithDefault "`nSelect SKU (number)" "1"
+                $params.vmImageSku = $skus[[int]$skuIdx - 1]
+            }
+            else {
+                $params.vmImageSku = Read-PromptWithDefault "Image SKU" "win11-23h2-ent"
+            }
         }
         else {
-            $params.vmImageSku = Read-PromptWithDefault "Image SKU" "win11-23h2-ent"
+            Write-Host "  Could not fetch image list. Using defaults." -ForegroundColor Yellow
+            $params.vmImageOffer = Read-PromptWithDefault "Image offer" "windows-11"
+            $params.vmImageSku   = Read-PromptWithDefault "Image SKU" "win11-23h2-ent"
         }
+        $params.vmImagePublisher = 'MicrosoftWindowsDesktop'
+        $params.vmName           = Read-PromptWithDefault "Template VM name" "avdtemplate01"
+        $params.vmSize           = Read-PromptWithDefault "VM size" "Standard_D4s_v5"
+        $params.vmAdminUsername   = Read-PromptWithDefault "VM admin username" "avdadmin"
+        $params.enableTrustedLaunch = Read-YesNo "Enable Trusted Launch (Secure Boot + vTPM)?" $true
     }
     else {
-        Write-Host "  Could not fetch image list. Using defaults." -ForegroundColor Yellow
-        $params.vmImageOffer = Read-PromptWithDefault "Image offer" "windows-11"
-        $params.vmImageSku   = Read-PromptWithDefault "Image SKU" "win11-23h2-ent"
+        Write-Host "  Skipping template VM creation." -ForegroundColor Yellow
+        # Set defaults so Bicep params are satisfied (VM won't be deployed)
+        $params.vmImagePublisher = 'MicrosoftWindowsDesktop'
+        $params.vmImageOffer     = 'windows-11'
+        $params.vmImageSku       = 'win11-23h2-ent'
+        $params.vmName           = 'avdtemplate01'
+        $params.vmSize           = 'Standard_D4s_v5'
+        $params.vmAdminUsername   = 'avdadmin'
+        $params.enableTrustedLaunch = $true
     }
-    $params.vmImagePublisher = 'MicrosoftWindowsDesktop'
-    $params.vmName           = Read-PromptWithDefault "Template VM name" "avdtemplate01"
-    $params.vmSize           = Read-PromptWithDefault "VM size" "Standard_D4s_v5"
-    $params.vmAdminUsername   = Read-PromptWithDefault "VM admin username" "avdadmin"
-    $params.enableTrustedLaunch = Read-YesNo "Enable Trusted Launch (Secure Boot + vTPM)?" $true
 
     # ── Storage ──
     Write-Section "Storage Configuration"
-    $params.storageAccountName  = Read-PromptWithDefault "Storage account name (blank = auto-generated)" ""
-    $params.fslogixShareName    = Read-PromptWithDefault "FSLogix share name" "fslogixprofiles"
-    $params.enableAadKerberosAuth = Read-YesNo "Enable AAD Kerberos auth for Azure Files?" $true
+
+    $params.deployStorage = $true
+    if (-not $isGreenfield) {
+        $useExistingSa = Read-YesNo "Use an existing Storage Account?" $false
+        if ($useExistingSa) {
+            Write-Host "Fetching existing Storage Accounts..." -ForegroundColor Yellow
+            $existingSas = @(az storage account list `
+                --query "[].{Name:name, RG:resourceGroup, Kind:kind, SKU:sku.name}" -o json 2>$null | ConvertFrom-Json)
+
+            if ($existingSas -and $existingSas.Count -gt 0) {
+                Write-Host "`nExisting Storage Accounts:"
+                for ($i = 0; $i -lt $existingSas.Count; $i++) {
+                    Write-Host "  [$($i + 1)] $($existingSas[$i].Name)  (RG: $($existingSas[$i].RG), Kind: $($existingSas[$i].Kind))"
+                }
+                $saIdx = Read-Host "Select Storage Account (number)"
+                $selectedSa = $existingSas[[int]$saIdx - 1]
+                $params.existingStorageAccountName = $selectedSa.Name
+                $params.existingStorageAccountRg = $selectedSa.RG
+                $params.deployStorage = $false
+                Write-Host "  Using existing storage account '$($selectedSa.Name)'." -ForegroundColor Green
+            }
+            else {
+                Write-Host "  No existing storage accounts found. Will create new." -ForegroundColor Yellow
+            }
+        }
+    }
+
+    if ($params.deployStorage) {
+        $params.storageAccountName  = Read-PromptWithDefault "Storage account name (blank = auto-generated)" ""
+        $params.fslogixShareName    = Read-PromptWithDefault "FSLogix share name" "fslogixprofiles"
+        $params.enableAadKerberosAuth = Read-YesNo "Enable AAD Kerberos auth for Azure Files?" $true
+    }
+    else {
+        $params.storageAccountName    = ''
+        $params.fslogixShareName      = 'fslogixprofiles'
+        $params.enableAadKerberosAuth = $true
+    }
 
     # ── Security ──
     Write-Section "Security Configuration"
-    $params.keyVaultName = Read-PromptWithDefault "Key Vault name (blank = auto-generated)" ""
 
+    # Key Vault — brownfield asks first
+    $params.deployKeyVault = $true
+    if (-not $isGreenfield) {
+        $useExistingKv = Read-YesNo "Use an existing Key Vault?" $false
+        if ($useExistingKv) {
+            Write-Host "Fetching existing Key Vaults..." -ForegroundColor Yellow
+            $existingKvs = @(az keyvault list --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null | ConvertFrom-Json)
+
+            if ($existingKvs -and $existingKvs.Count -gt 0) {
+                Write-Host "`nExisting Key Vaults:"
+                for ($i = 0; $i -lt $existingKvs.Count; $i++) {
+                    Write-Host "  [$($i + 1)] $($existingKvs[$i].Name)  (RG: $($existingKvs[$i].RG))"
+                }
+                $kvIdx = Read-Host "Select Key Vault (number)"
+                $selectedKv = $existingKvs[[int]$kvIdx - 1]
+                $params.existingKeyVaultName = $selectedKv.Name
+                $params.existingKeyVaultRg = $selectedKv.RG
+                $params.deployKeyVault = $false
+            }
+            else {
+                Write-Host "  No existing Key Vaults found. Will create new." -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # New Key Vault name (only if creating new)
+    if ($params.deployKeyVault) {
+        $params.keyVaultName = Read-PromptWithDefault "Key Vault name (blank = auto-generated)" ""
+    }
+    else {
+        $params.keyVaultName = ''
+    }
+
+    # Admin password
     Write-Host "`nEnter the VM admin password (stored in Key Vault):" -ForegroundColor Yellow
     $securePassword  = Read-Host -AsSecureString "  Admin password"
     $confirmPassword = Read-Host -AsSecureString "  Confirm password"
@@ -379,39 +464,19 @@ function Get-DeploymentParameters {
     $params.vmAdminPassword = $plain1
     $plain2 = $null
 
-    # ── Key Vault (brownfield) ──
-    $params.deployKeyVault = $true
-    if (-not $isGreenfield) {
-        $useExistingKv = Read-YesNo "`nUse an existing Key Vault?" $false
-        if ($useExistingKv) {
-            Write-Host "Fetching existing Key Vaults..." -ForegroundColor Yellow
-            $existingKvs = @(az keyvault list --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null | ConvertFrom-Json)
-
-            if ($existingKvs -and $existingKvs.Count -gt 0) {
-                Write-Host "`nExisting Key Vaults:"
-                for ($i = 0; $i -lt $existingKvs.Count; $i++) {
-                    Write-Host "  [$($i + 1)] $($existingKvs[$i].Name)  (RG: $($existingKvs[$i].RG))"
-                }
-                $kvIdx = Read-Host "Select Key Vault (number)"
-                $selectedKv = $existingKvs[[int]$kvIdx - 1]
-                $params.existingKeyVaultName = $selectedKv.Name
-                $params.existingKeyVaultRg = $selectedKv.RG
-                $params.deployKeyVault = $false
-
-                # Store admin password in the existing Key Vault
-                Write-Host "Storing admin password in existing Key Vault '$($selectedKv.Name)'..." -ForegroundColor Yellow
-                try {
-                    az keyvault secret set `
-                        --vault-name $selectedKv.Name `
-                        --name 'AVDAdminPassword' `
-                        --value $params.vmAdminPassword `
-                        --output none 2>$null
-                    Write-Host "  Password stored successfully." -ForegroundColor Green
-                }
-                catch {
-                    Write-Host "  WARNING: Could not store password in Key Vault. You may need to add it manually." -ForegroundColor Red
-                }
-            }
+    # Store password in existing Key Vault if brownfield
+    if (-not $params.deployKeyVault -and $params.existingKeyVaultName) {
+        Write-Host "Storing admin password in existing Key Vault '$($params.existingKeyVaultName)'..." -ForegroundColor Yellow
+        try {
+            az keyvault secret set `
+                --vault-name $params.existingKeyVaultName `
+                --name 'AVDAdminPassword' `
+                --value $params.vmAdminPassword `
+                --output none 2>$null
+            Write-Host "  Password stored successfully." -ForegroundColor Green
+        }
+        catch {
+            Write-Host "  WARNING: Could not store password in Key Vault. You may need to add it manually." -ForegroundColor Red
         }
     }
 
@@ -475,8 +540,9 @@ function Start-AVDDeployment {
     Write-Host "  Network RG:         $($Params.networkRgName)"
     Write-Host "  Monitor RG:         $($Params.monitorRgName)"
     Write-Host "  Host Pool:          $($Params.hostPoolName) ($($Params.hostPoolType))"
-    Write-Host "  VM Size:            $($Params.vmSize)"
-    Write-Host "  Image:              $($Params.vmImagePublisher)/$($Params.vmImageOffer)/$($Params.vmImageSku)"
+    Write-Host "  Template VM:        $(if ($Params.deployTemplateVm) { "$($Params.vmSize) — $($Params.vmImageOffer)/$($Params.vmImageSku)" } else { 'Skipped (existing)' })"
+    Write-Host "  Storage:            $(if ($Params.deployStorage) { 'New' } else { "Existing ($($Params.existingStorageAccountName))" })"
+    Write-Host "  Key Vault:          $(if ($Params.deployKeyVault) { 'New' } else { "Existing ($($Params.existingKeyVaultName))" })"
     Write-Host "  Trusted Launch:     $($Params.enableTrustedLaunch)"
     Write-Host "  Domain Controller:  $($Params.deployDomain)"
     Write-Host "  Azure Bastion:      $($Params.deployBastion)"
@@ -513,10 +579,12 @@ function Start-AVDDeployment {
         "vmImageOffer=$($Params.vmImageOffer)"
         "vmImageSku=$($Params.vmImageSku)"
         "enableTrustedLaunch=$($Params.enableTrustedLaunch.ToString().ToLower())"
+        "deployStorage=$($Params.deployStorage.ToString().ToLower())"
         "fslogixShareName=$($Params.fslogixShareName)"
         "enableAadKerberosAuth=$($Params.enableAadKerberosAuth.ToString().ToLower())"
         "deployKeyVault=$($Params.deployKeyVault.ToString().ToLower())"
         "deployMonitoring=$($Params.deployMonitoring.ToString().ToLower())"
+        "deployTemplateVm=$($Params.deployTemplateVm.ToString().ToLower())"
         "deployDomain=$($Params.deployDomain.ToString().ToLower())"
         "deployBastion=$($Params.deployBastion.ToString().ToLower())"
     )
@@ -550,17 +618,22 @@ function Start-AVDDeployment {
     # Build --parameters arguments
     $paramString = ($azParams | ForEach-Object { "--parameters `"$_`"" }) -join " "
 
-    $cmd = "az deployment sub create --location `"$($Params.location)`" --template-file `"$templateFile`" $paramString --name `"$deploymentName`" --output json"
+    $noWaitCmd = "az deployment sub create --no-wait --location `"$($Params.location)`" --template-file `"$templateFile`" $paramString --name `"$deploymentName`" --output json"
 
     Write-Host "Deployment: $deploymentName" -ForegroundColor Cyan
-    Write-Host "This may take 15-30 minutes...`n" -ForegroundColor Yellow
+    Write-Host "Starting deployment...`n" -ForegroundColor Yellow
 
     try {
-        $resultJson = Invoke-Expression $cmd 2>&1
-        $resultStr = $resultJson -join "`n"
-        $result = $resultStr | ConvertFrom-Json
+        # Start deployment asynchronously
+        Invoke-Expression $noWaitCmd 2>&1 | Out-Null
 
-        # Check actual provisioning state — az may return JSON even on failure
+        if ($LASTEXITCODE -ne 0) {
+            throw "Deployment command failed to start (exit code $LASTEXITCODE)."
+        }
+
+        # Poll for progress
+        $result = Watch-DeploymentProgress -DeploymentName $deploymentName
+
         $provisioningState = $result.properties.provisioningState
         $succeeded = $provisioningState -eq 'Succeeded'
 
@@ -579,7 +652,6 @@ function Start-AVDDeployment {
         }
     }
     catch {
-        # az command itself threw (e.g. template validation error)
         # Try to fetch deployment status for partial results
         $partialResult = $null
         try {
@@ -595,6 +667,122 @@ function Start-AVDDeployment {
             Params         = $Params
         }
     }
+}
+
+# ══════════════════════════════════════════════════════════
+# Deployment Progress Polling
+# ══════════════════════════════════════════════════════════
+
+function Watch-DeploymentProgress {
+    param(
+        [string]$DeploymentName,
+        [int]$PollIntervalSeconds = 3
+    )
+
+    $startTime = Get-Date
+    $terminalStates = @('Succeeded', 'Failed', 'Canceled')
+    $previousLineCount = 0
+
+    while ($true) {
+        $elapsed = (Get-Date) - $startTime
+        $elapsedStr = '{0:mm\:ss}' -f $elapsed
+
+        # Get overall deployment status
+        $deployJson = az deployment sub show --name $DeploymentName --output json 2>$null
+        if (-not $deployJson) {
+            Write-Host "  Waiting for deployment to register..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $PollIntervalSeconds
+            continue
+        }
+        $deploy = $deployJson | ConvertFrom-Json
+        $overallState = $deploy.properties.provisioningState
+
+        # Get per-operation status
+        $opsJson = az deployment operation sub list --name $DeploymentName --output json 2>$null
+        $ops = @()
+        if ($opsJson) {
+            $ops = @($opsJson | ConvertFrom-Json)
+        }
+
+        # Clear previous output by moving cursor up
+        if ($previousLineCount -gt 0) {
+            for ($i = 0; $i -lt $previousLineCount; $i++) {
+                [Console]::SetCursorPosition(0, [Console]::CursorTop - 1)
+                Write-Host (' ' * [Console]::WindowWidth) -NoNewline
+                [Console]::SetCursorPosition(0, [Console]::CursorTop)
+            }
+        }
+
+        # Build status display
+        $lines = @()
+
+        $stateColor = switch ($overallState) {
+            'Succeeded' { 'Green' }
+            'Failed'    { 'Red' }
+            'Canceled'  { 'Yellow' }
+            default     { 'Cyan' }
+        }
+
+        $lines += "  Deployment: $DeploymentName    [$overallState - $elapsedStr]"
+        $lines += ""
+        $lines += "  {0,-40} {1,-15} {2}" -f 'Operation', 'Status', 'Duration'
+        $lines += "  $('─' * 70)"
+
+        foreach ($op in $ops) {
+            $resourceName = ''
+            if ($op.properties.targetResource -and $op.properties.targetResource.resourceName) {
+                $resourceName = $op.properties.targetResource.resourceName
+            }
+            elseif ($op.properties.targetResource -and $op.properties.targetResource.id) {
+                $resourceName = ($op.properties.targetResource.id -split '/')[-1]
+            }
+            else {
+                continue
+            }
+
+            $opState = $op.properties.provisioningState
+            $opDuration = '—'
+            if ($op.properties.timestamp) {
+                $opTimestamp = [DateTime]::Parse($op.properties.timestamp)
+                $opElapsed = $opTimestamp - $startTime
+                if ($opElapsed.TotalSeconds -gt 0) {
+                    $opDuration = '{0:mm\:ss}' -f $opElapsed
+                }
+            }
+
+            $lines += "  {0,-40} {1,-15} {2}" -f $resourceName, $opState, $opDuration
+        }
+
+        $lines += ""
+        $previousLineCount = $lines.Count
+
+        # Print all lines
+        foreach ($line in $lines) {
+            if ($line -match 'Succeeded') {
+                Write-Host $line -ForegroundColor Green
+            }
+            elseif ($line -match 'Failed') {
+                Write-Host $line -ForegroundColor Red
+            }
+            elseif ($line -match 'Running|Accepted') {
+                Write-Host $line -ForegroundColor Cyan
+            }
+            else {
+                Write-Host $line
+            }
+        }
+
+        # Check if deployment is done
+        if ($overallState -in $terminalStates) {
+            break
+        }
+
+        Start-Sleep -Seconds $PollIntervalSeconds
+    }
+
+    # Return final deployment result
+    $finalJson = az deployment sub show --name $DeploymentName --output json 2>$null
+    return ($finalJson | ConvertFrom-Json)
 }
 
 # ══════════════════════════════════════════════════════════
@@ -632,8 +820,9 @@ function Show-DeploymentSummary {
     if ($outputs) {
         if ($outputs.hostPoolName -or $outputs.workspaceName) {
             Write-Host "`n  AVD Resources:" -ForegroundColor White
-            if ($outputs.hostPoolName)  { Write-Host "    Host Pool:    $($outputs.hostPoolName.value)" }
-            if ($outputs.workspaceName) { Write-Host "    Workspace:    $($outputs.workspaceName.value)" }
+            if ($outputs.hostPoolName)     { Write-Host "    Host Pool:      $($outputs.hostPoolName.value)" }
+            if ($outputs.scalingPlanName)  { Write-Host "    Scaling Plan:   $($outputs.scalingPlanName.value)" }
+            if ($outputs.workspaceName)    { Write-Host "    Workspace:      $($outputs.workspaceName.value)" }
             if ($outputs.registrationTokenExpiry) {
                 Write-Host "    Token Expiry: $($outputs.registrationTokenExpiry.value)"
             }
@@ -659,6 +848,10 @@ function Show-DeploymentSummary {
             Write-Host "`n  Storage:" -ForegroundColor White
             Write-Host "    Account: $($outputs.storageAccountName.value)"
         }
+        elseif ($DeploymentResult.Params.existingStorageAccountName) {
+            Write-Host "`n  Storage (existing):" -ForegroundColor White
+            Write-Host "    Account: $($DeploymentResult.Params.existingStorageAccountName)  (RG: $($DeploymentResult.Params.existingStorageAccountRg))"
+        }
     }
 
     # Show existing Log Analytics workspace if brownfield
@@ -680,8 +873,8 @@ function Show-DeploymentSummary {
             try {
                 $regInfo = $regJson | ConvertFrom-Json
                 if ($regInfo.token) {
-                    $preview = $regInfo.token.Substring(0, [Math]::Min(50, $regInfo.token.Length))
-                    Write-Host "    Token: ${preview}..."
+                    Write-Host "    Token:"
+                    Write-Host "    $($regInfo.token)" -ForegroundColor Gray
                     if ($regInfo.expirationTime) {
                         Write-Host "    Expires: $($regInfo.expirationTime)"
                     }

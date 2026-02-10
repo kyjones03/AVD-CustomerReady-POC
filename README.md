@@ -7,9 +7,12 @@ An interactive, IaC-driven solution to deploy a **customer-ready Azure Virtual D
 ## Features
 
 - **Interactive deployment** — guided PowerShell experience with sensible defaults
-- **Greenfield & Brownfield** — deploy everything from scratch or leverage existing VNet / Key Vault / Log Analytics
+- **Greenfield & Brownfield** — deploy everything from scratch or leverage existing VNet / Key Vault / Storage / Log Analytics
+- **Live progress tracking** — real-time status table showing each resource deployment as it completes
 - **Modular Bicep templates** — clean, subscription-scoped infrastructure as code
+- **Scaling plan** — auto-created and linked to the host pool (Personal or Pooled)
 - **Security-first** — Key Vault integration, Trusted Launch, RBAC authorization, no secrets in source
+- **Bastion-aware** — skips public IP and uses blank NSG when Bastion is enabled
 - **Image picker** — dynamically lists available Windows 11 offers and SKUs from your region
 
 ---
@@ -43,8 +46,8 @@ The script will:
 2. Ask you to choose **Greenfield** or **Brownfield**
 3. Collect all parameters with sensible defaults
 4. Let you pick a Windows 11 image from your region
-5. Deploy via `az deployment sub create`
-6. Display a summary with resource names, IPs, and portal links
+5. Deploy asynchronously with a **live progress table** showing per-resource status
+6. Display a summary with resource names, registration token, portal links, and any errors
 
 ---
 
@@ -54,18 +57,15 @@ The script will:
 ├── avdMain.bicep                  # Orchestrator — subscription scope
 ├── avdParams.bicepparam           # Default parameter values (reference only)
 ├── modules/
-│   ├── networking.bicep           # VNet, Subnets, NSG
+│   ├── networking.bicep           # VNet, Subnets, NSG (blank when Bastion enabled)
 │   ├── keyvault.bicep             # Key Vault + secrets + RBAC
-│   ├── avdcore.bicep              # Host pool, app group, workspace, storage, gallery, VM
+│   ├── avdcore.bicep              # Host pool, scaling plan, app group, workspace, storage, gallery, VM
 │   ├── monitor.bicep              # Log Analytics + Data Collection Rule
 │   ├── domain.bicep               # Domain controller (conditional)
 │   ├── bastion.bicep              # Azure Bastion Developer SKU (conditional)
-│   └── roleassignment.bicep       # AVD service principal role assignment
+│   └── roleassignment.bicep       # AVD service principal role assignments
 ├── Deploy-AVD.ps1                 # Interactive PowerShell deployment wrapper
 ├── README.md                      # This file
-├── Specifications/                # Design specifications & flow diagram
-│   ├── SPECIFICATIONS.md
-│   └── flow.png
 └── Images/
 ```
 
@@ -80,14 +80,14 @@ All resources are created from scratch:
 - 3 Resource Groups (core, networking, monitoring)
 - Virtual Network, Subnet, NSG
 - Key Vault with VM admin secret
-- AVD Host Pool, Application Group, Workspace
+- AVD Host Pool, Scaling Plan, Application Group, Workspace
 - Storage Account with FSLogix profile share
 - Azure Compute Gallery
-- Template VM with Public IP
+- Template VM with Public IP and NIC
 - Log Analytics Workspace + Data Collection Rule
-- Role Assignment (Desktop Virtualization Power On Contributor)
+- Role Assignments (Power On Contributor + Power On Off Contributor)
 - *(Optional)* Domain Controller VM
-- *(Optional)* Azure Bastion
+- *(Optional)* Azure Bastion (Developer SKU — skips PIP, uses blank NSG)
 
 ### Brownfield — Leverage Existing Infrastructure
 
@@ -98,9 +98,11 @@ You're prompted to select or enter existing:
 | Resource Groups | Pick from list or enter name |
 | Virtual Network / Subnet | Pick from list |
 | Key Vault | Pick from list |
+| Storage Account | Pick from list |
 | Log Analytics Workspace | Pick from list |
+| Template VM | Option to skip building a new VM |
 
-When existing resources are provided, the corresponding Bicep module is skipped.
+When existing resources are provided, the corresponding Bicep module is skipped. Admin passwords are stored in the selected existing Key Vault automatically.
 
 ---
 
@@ -109,17 +111,40 @@ When existing resources are provided, the corresponding Bicep module is skipped.
 | Resource | Module | When Deployed |
 |---|---|---|
 | Resource Groups (3) | `avdMain.bicep` | Always (idempotent) |
+| Role Assignments (2) | `roleassignment.bicep` | Always (before AVD core) |
 | NSG, VNet, Subnet | `networking.bicep` | Greenfield only |
 | Key Vault + Secret | `keyvault.bicep` | Greenfield only |
-| Host Pool, App Group, Workspace | `avdcore.bicep` | Always |
-| Storage Account (FSLogix) | `avdcore.bicep` | Always |
+| Host Pool + Scaling Plan | `avdcore.bicep` | Always |
+| Application Group + Workspace | `avdcore.bicep` | Always |
+| Storage Account (FSLogix) | `avdcore.bicep` | Greenfield only (skippable) |
 | Azure Compute Gallery | `avdcore.bicep` | Always |
-| Template VM + PIP + NIC | `avdcore.bicep` | Always |
+| Template VM + NIC | `avdcore.bicep` | Optional (skippable in brownfield) |
+| Public IP | `avdcore.bicep` | Only when no Bastion |
 | Log Analytics Workspace | `monitor.bicep` | Greenfield only |
 | Data Collection Rule | `monitor.bicep` | Optional |
 | Domain Controller VM | `domain.bicep` | Optional |
 | Azure Bastion | `bastion.bicep` | Optional |
-| Role Assignment | `roleassignment.bicep` | Always |
+
+---
+
+## Live Deployment Progress
+
+The deployment runs asynchronously and displays a live-updating status table:
+
+```
+  Deployment: avd-poc-20260210-180130    [Running - 02:15]
+
+  Operation                                Status          Duration
+  ──────────────────────────────────────────────────────────────────────
+  rg-avd-core-poc                          Succeeded       00:12
+  rg-avd-network-poc                       Succeeded       00:08
+  roleAssignmentDeployment                 Succeeded       00:25
+  networkingDeployment                     Succeeded       01:02
+  keyVaultDeployment                       Running         01:45
+  avdCoreDeployment                        Accepted        —
+```
+
+Statuses are color-coded: **green** = Succeeded, **cyan** = Running, **red** = Failed.
 
 ---
 
@@ -130,8 +155,9 @@ When existing resources are provided, the corresponding Bicep module is skipped.
 | **No secrets in source** | Admin passwords collected via `Read-Host -AsSecureString` and passed as `@secure()` Bicep parameters |
 | **Key Vault** | Stores VM admin password; RBAC authorization enabled; soft delete with 90-day retention |
 | **Trusted Launch** | Secure Boot + vTPM enabled by default on all VMs |
-| **NSG** | Default allows RDP from `*` — script warns operator to scope source IP |
-| **RBAC** | Key Vault Secrets Officer assigned to deploying user; AVD Power On Contributor assigned to AVD service principal |
+| **NSG** | Default allows RDP from `*` (warns operator); blank NSG when Bastion is enabled |
+| **No Public IP with Bastion** | Template VM skips public IP when Bastion provides secure access |
+| **RBAC** | Key Vault Secrets Officer for deploying user; Power On Contributor + Power On Off Contributor for AVD service principal |
 
 ---
 
@@ -160,6 +186,7 @@ Override any default with `--parameters key=value`. See `avdParams.bicepparam` f
 | Subnet | `snet-avd-poc` | `snet-avd-poc` |
 | NSG | `nsg-avd-poc` | `nsg-avd-poc` |
 | Host Pool | `hp-avd-poc` | `hp-avd-poc` |
+| Scaling Plan | `{hostpool}-scaling` | `hp-avd-poc-scaling` |
 | Application Group | `ag-avd-poc` | `ag-avd-poc` |
 | Workspace | `ws-avd-poc` | `ws-avd-poc` |
 | Storage Account | `sa{uniqueString}` | `sa2hfx7...` |
@@ -173,10 +200,10 @@ Names requiring global uniqueness use `uniqueString()` to avoid collisions.
 
 ## Future Enhancements (Out of Scope for V1)
 
-- Multi-region image replication via Azure Compute Gallery
-- Automated session host provisioning from golden image
-- Entra ID Join
+- Image capturing flow with Azure Compute Gallery with regional image replication
+- Automated session host provisioning from golden image with AD and Entra ID join capabilities
 - Private endpoints for Storage & Key Vault
+- Scaling plan schedule configurations
 - Azure Policy assignments
 - CI/CD pipeline (GitHub Actions)
-- Autoscale for pooled host pools
+

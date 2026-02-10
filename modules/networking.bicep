@@ -9,12 +9,13 @@ param subnetName string = 'snet-avd-poc'
 param subnetPrefix string = '10.0.0.0/24'
 param nsgName string = 'nsg-avd-poc'
 param dnsServers array = []
+param deployBastion bool = false
 
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: nsgName
   location: location
   properties: {
-    securityRules: [
+    securityRules: deployBastion ? [] : [
       {
         name: 'Allow-RDP-Inbound'
         properties: {

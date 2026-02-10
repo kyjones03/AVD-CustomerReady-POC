@@ -42,6 +42,7 @@ param workspaceName string = 'ws-avd-poc'
 param workspaceFriendlyName string = 'AVD POC Workspace'
 
 // ── Compute ──
+param deployTemplateVm bool = true
 param vmSize string = 'Standard_D4s_v5'
 param vmAdminUsername string = 'avdadmin'
 param vmImagePublisher string = 'MicrosoftWindowsDesktop'
@@ -51,6 +52,7 @@ param enableTrustedLaunch bool = true
 param vmName string = 'avdtemplate01'
 
 // ── Storage ──
+param deployStorage bool = true
 param storageAccountName string = ''
 param fslogixShareName string = 'fslogixprofiles'
 param enableAadKerberosAuth bool = true
@@ -116,6 +118,7 @@ module networking 'modules/networking.bicep' = if (deployNetworking) {
     subnetPrefix: subnetPrefix
     nsgName: nsgName
     dnsServers: dnsServers
+    deployBastion: deployBastion
   }
 }
 
@@ -142,10 +145,12 @@ module avdCore 'modules/avdcore.bicep' = {
     appGroupName: appGroupName
     workspaceName: workspaceName
     workspaceFriendlyName: workspaceFriendlyName
+    deployStorage: deployStorage
     storageAccountName: effectiveStorageAccountName
     fslogixShareName: fslogixShareName
     enableAadKerberosAuth: enableAadKerberosAuth
     galleryName: galleryName
+    deployTemplateVm: deployTemplateVm
     vmName: vmName
     vmSize: vmSize
     vmAdminUsername: vmAdminUsername
@@ -156,10 +161,12 @@ module avdCore 'modules/avdcore.bicep' = {
     enableTrustedLaunch: enableTrustedLaunch
     subnetId: deployNetworking ? networking!.outputs.subnetId : existingSubnetId
     publicIpName: publicIpName
+    deployPublicIp: !deployBastion
     baseTime: baseTime
   }
   dependsOn: [
     keyVaultModule
+    roleAssignment
   ]
 }
 
@@ -199,13 +206,10 @@ module bastionModule 'modules/bastion.bicep' = if (deployBastion) {
   }
 }
 
-// ── Role Assignment — AVD Power On Contributor ──
+// ── Role Assignment — AVD Power On + Power On Off Contributor ──
 module roleAssignment 'modules/roleassignment.bicep' = {
   scope: coreRg
   name: 'roleAssignmentDeployment'
-  dependsOn: [
-    avdCore
-  ]
 }
 
 // ══════════════════════════════════════════════════════════
@@ -215,6 +219,7 @@ output coreResourceGroupName string = coreRg.name
 output networkResourceGroupName string = networkRg.name
 output monitorResourceGroupName string = monitorRg.name
 output hostPoolName string = avdCore.outputs.hostPoolName
+output scalingPlanName string = avdCore.outputs.scalingPlanName
 output registrationTokenExpiry string = avdCore.outputs.registrationTokenExpiry
 output workspaceName string = avdCore.outputs.workspaceName
 output templateVmName string = avdCore.outputs.vmName
