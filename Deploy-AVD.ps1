@@ -758,7 +758,10 @@ function Watch-DeploymentProgress {
 
         # Print all lines
         foreach ($line in $lines) {
-            if ($line -match 'Succeeded') {
+            if ($line -eq $lines[0]) {
+                Write-Host $line -ForegroundColor $stateColor
+            }
+            elseif ($line -match 'Succeeded') {
                 Write-Host $line -ForegroundColor Green
             }
             elseif ($line -match 'Failed') {
