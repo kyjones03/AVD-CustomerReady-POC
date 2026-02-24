@@ -1,5 +1,7 @@
 # Azure Virtual Desktop — Proof of Concept Deployment
 
+> **Disclaimer:** This project is an independent community contribution and is **not** affiliated with, endorsed by, or associated with any official Microsoft accelerators or programs. It is provided as-is, with no warranties or guarantees. Use at your own discretion.
+
 An interactive, IaC-driven solution to deploy a **customer-ready Azure Virtual Desktop environment** using **Azure Bicep** and **PowerShell**. Supports both **greenfield** (net-new) and **brownfield** (existing infrastructure) flows.
 
 ---
