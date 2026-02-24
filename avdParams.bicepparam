@@ -42,7 +42,7 @@ param vmAdminUsername = 'avdadmin'
 param vmAdminPassword = '' // to be provided at deployment time
 param vmImagePublisher = 'MicrosoftWindowsDesktop'
 param vmImageOffer = 'windows-11'
-param vmImageSku = 'win11-23h2-ent'
+param vmImageSku = 'win11-23h2-avd'
 param enableTrustedLaunch = true
 param vmName = 'avdtemplate01'
 
