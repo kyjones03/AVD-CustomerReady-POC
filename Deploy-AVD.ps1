@@ -18,9 +18,9 @@ param()
 $ErrorActionPreference = 'Stop'
 $scriptDir = $PSScriptRoot
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Helper Functions
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Write-Banner {
     param([string]$Text)
@@ -94,9 +94,9 @@ function Read-ListSelection {
     return $value
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Prerequisites Check
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Test-Prerequisites {
     Write-Banner "Azure Virtual Desktop - POC Deployment"
@@ -121,7 +121,7 @@ function Test-Prerequisites {
         Write-Host "$bicepVersion" -ForegroundColor Green
     }
     catch {
-        Write-Host "NOT FOUND — installing..." -ForegroundColor Yellow
+        Write-Host "NOT FOUND - installing..." -ForegroundColor Yellow
         az bicep install
     }
 
@@ -171,29 +171,29 @@ function Test-Prerequisites {
     }
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Parameter Collection
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Get-DeploymentParameters {
     param([hashtable]$Context)
 
     $params = @{}
 
-    # ── Deployment Path ──
+    # -- Deployment Path --
     Write-Section "Deployment Path"
     $pathChoice = Read-Selection "Select deployment path:" @(
-        "Greenfield  — Deploy all resources from scratch"
-        "Brownfield  — Use existing networking/identity infrastructure"
+        "Greenfield  - Deploy all resources from scratch"
+        "Brownfield  - Use existing networking/identity infrastructure"
     ) 1
     $isGreenfield = ($pathChoice -eq 1)
     $params.isGreenfield = $isGreenfield
 
-    # ── General ──
+    # -- General --
     Write-Section "General Settings"
     $params.location = Read-PromptWithDefault "Azure region" "eastus2"
 
-    # ── Resource Groups ──
+    # -- Resource Groups --
     Write-Section "Resource Groups"
     if ($isGreenfield) {
         $params.coreRgName    = Read-PromptWithDefault "Core resource group name" "rg-avd-core-poc"
@@ -221,7 +221,7 @@ function Get-DeploymentParameters {
         }
     }
 
-    # ── Networking ──
+    # -- Networking --
     Write-Section "Networking"
     $params.deployNetworking = $isGreenfield
     $params.existingSubnetId = ''
@@ -291,7 +291,7 @@ function Get-DeploymentParameters {
         }
     }
 
-    # ── AVD Configuration ──
+    # -- AVD Configuration --
     Write-Section "AVD Configuration"
     $poolTypeChoice = Read-Selection "Host pool type:" @(
         "Personal  (Persistent desktop assignment)"
@@ -303,7 +303,7 @@ function Get-DeploymentParameters {
     $params.workspaceName         = Read-PromptWithDefault "Workspace name" "ws-avd-poc"
     $params.workspaceFriendlyName = Read-PromptWithDefault "Workspace friendly name" "AVD POC Workspace"
 
-    # ── Compute / Image Selection ──
+    # -- Compute / Image Selection --
     Write-Section "Compute Configuration"
 
     $params.deployTemplateVm = $true
@@ -369,7 +369,7 @@ function Get-DeploymentParameters {
         $params.enableTrustedLaunch = $true
     }
 
-    # ── Storage ──
+    # -- Storage --
     Write-Section "Storage Configuration"
 
     $params.deployStorage = $true
@@ -409,10 +409,10 @@ function Get-DeploymentParameters {
         $params.enableAadKerberosAuth = $true
     }
 
-    # ── Security ──
+    # -- Security --
     Write-Section "Security Configuration"
 
-    # Key Vault — brownfield asks first
+    # Key Vault - brownfield asks first
     $params.deployKeyVault = $true
     if (-not $isGreenfield) {
         $useExistingKv = Read-YesNo "Use an existing Key Vault?" $false
@@ -480,7 +480,7 @@ function Get-DeploymentParameters {
         }
     }
 
-    # ── Monitoring ──
+    # -- Monitoring --
     Write-Section "Monitoring Configuration"
     $params.deployMonitoring = $true
 
@@ -510,7 +510,7 @@ function Get-DeploymentParameters {
         $params.deployDcr        = Read-YesNo "Deploy Data Collection Rule (performance counters)?" $true
     }
 
-    # ── Optional Features ──
+    # -- Optional Features --
     Write-Section "Optional Features"
     $params.deployDomain = Read-YesNo "Deploy a Domain Controller VM?" $false
     if ($params.deployDomain) {
@@ -525,9 +525,9 @@ function Get-DeploymentParameters {
     return $params
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Deployment Execution
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Start-AVDDeployment {
     param([hashtable]$Params)
@@ -540,7 +540,7 @@ function Start-AVDDeployment {
     Write-Host "  Network RG:         $($Params.networkRgName)"
     Write-Host "  Monitor RG:         $($Params.monitorRgName)"
     Write-Host "  Host Pool:          $($Params.hostPoolName) ($($Params.hostPoolType))"
-    Write-Host "  Template VM:        $(if ($Params.deployTemplateVm) { "$($Params.vmSize) — $($Params.vmImageOffer)/$($Params.vmImageSku)" } else { 'Skipped (existing)' })"
+    Write-Host "  Template VM:        $(if ($Params.deployTemplateVm) { "$($Params.vmSize) - $($Params.vmImageOffer)/$($Params.vmImageSku)" } else { 'Skipped (existing)' })"
     Write-Host "  Storage:            $(if ($Params.deployStorage) { 'New' } else { "Existing ($($Params.existingStorageAccountName))" })"
     Write-Host "  Key Vault:          $(if ($Params.deployKeyVault) { 'New' } else { "Existing ($($Params.existingKeyVaultName))" })"
     Write-Host "  Trusted Launch:     $($Params.enableTrustedLaunch)"
@@ -669,9 +669,9 @@ function Start-AVDDeployment {
     }
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Deployment Progress Polling
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Watch-DeploymentProgress {
     param(
@@ -726,7 +726,7 @@ function Watch-DeploymentProgress {
         $lines += "  Deployment: $DeploymentName    [$overallState - $elapsedStr]"
         $lines += ""
         $lines += "  {0,-40} {1,-15} {2}" -f 'Operation', 'Status', 'Duration'
-        $lines += "  $('─' * 70)"
+        $lines += "  $('-' * 70)"
 
         foreach ($op in $ops) {
             $resourceName = ''
@@ -741,7 +741,7 @@ function Watch-DeploymentProgress {
             }
 
             $opState = $op.properties.provisioningState
-            $opDuration = '—'
+            $opDuration = '-'
             if ($op.properties.timestamp) {
                 $opTimestamp = [DateTime]::Parse($op.properties.timestamp)
                 $opElapsed = $opTimestamp - $startTime
@@ -788,9 +788,9 @@ function Watch-DeploymentProgress {
     return ($finalJson | ConvertFrom-Json)
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Post-Deployment Summary
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 function Show-DeploymentSummary {
     param([hashtable]$DeploymentResult)
@@ -917,9 +917,9 @@ function Show-DeploymentSummary {
     Write-Host ""
 }
 
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 # Main
-# ══════════════════════════════════════════════════════════
+# ==========================================================
 
 try {
     $context = Test-Prerequisites
