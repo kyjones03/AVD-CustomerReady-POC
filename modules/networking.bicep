@@ -10,6 +10,9 @@ param subnetPrefix string = '10.0.0.0/24'
 param nsgName string = 'nsg-avd-poc'
 param dnsServers array = []
 param deployBastion bool = false
+param deployPrivateEndpoints bool = false
+param peSubnetName string = 'snet-pe-poc'
+param peSubnetPrefix string = '10.0.1.0/24'
 
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: nsgName
@@ -33,6 +36,26 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   }
 }
 
+var avdSubnet = {
+  name: subnetName
+  properties: {
+    addressPrefix: subnetPrefix
+    networkSecurityGroup: {
+      id: nsg.id
+    }
+  }
+}
+
+// PE subnets do not require NSG rules; privateEndpointNetworkPolicies
+// must be Disabled (the default) on the subnet for PEs to be created.
+var peSubnet = {
+  name: peSubnetName
+  properties: {
+    addressPrefix: peSubnetPrefix
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+}
+
 resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   name: vnetName
   location: location
@@ -45,17 +68,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
     dhcpOptions: !empty(dnsServers) ? {
       dnsServers: dnsServers
     } : null
-    subnets: [
-      {
-        name: subnetName
-        properties: {
-          addressPrefix: subnetPrefix
-          networkSecurityGroup: {
-            id: nsg.id
-          }
-        }
-      }
-    ]
+    subnets: deployPrivateEndpoints ? [avdSubnet, peSubnet] : [avdSubnet]
   }
 }
 
@@ -64,3 +77,4 @@ output vnetName string = vnet.name
 output subnetId string = vnet.properties.subnets[0].id
 output subnetName string = vnet.properties.subnets[0].name
 output nsgId string = nsg.id
+output peSubnetId string = deployPrivateEndpoints ? vnet.properties.subnets[1].id : ''

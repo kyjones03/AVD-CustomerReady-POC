@@ -9,6 +9,7 @@ param keyVaultName string
 param vmAdminPassword string
 
 param currentUserObjectId string = ''
+param deployPrivateEndpoints bool = false
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -25,6 +26,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enabledForDeployment: true
     enabledForDiskEncryption: true
     enabledForTemplateDeployment: true
+    // Deny all public traffic when private endpoints are active.
+    // 'AzureServices' bypass keeps ARM template deployments functional.
+    networkAcls: deployPrivateEndpoints ? {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices'
+      ipRules: []
+      virtualNetworkRules: []
+    } : null
   }
 }
 

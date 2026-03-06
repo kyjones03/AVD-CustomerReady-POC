@@ -18,6 +18,7 @@ param deployStorage bool = true
 param storageAccountName string
 param fslogixShareName string = 'fslogixprofiles'
 param enableAadKerberosAuth bool = true
+param deployPrivateEndpoints bool = false
 
 // Gallery
 param galleryName string = 'acgavdpoc'
@@ -118,6 +119,15 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (dep
     } : null
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+    // Disable public access and deny all traffic when private endpoints are active.
+    // FSLogix clients connect via the private IP registered in the private DNS zone.
+    publicNetworkAccess: deployPrivateEndpoints ? 'Disabled' : 'Enabled'
+    networkAcls: deployPrivateEndpoints ? {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices, Logging, Metrics'
+      ipRules: []
+      virtualNetworkRules: []
+    } : null
   }
 }
 
