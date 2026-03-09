@@ -46,6 +46,9 @@ param deployPublicIp bool = true
 // Registration token timestamp
 param baseTime string = utcNow()
 
+// Diagnostics
+param logAnalyticsWorkspaceId string = ''
+
 // ── Host Pool ──
 resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2023-09-05' = {
   name: hostPoolName
@@ -101,6 +104,54 @@ resource workspace 'Microsoft.DesktopVirtualization/workspaces@2023-09-05' = {
     friendlyName: workspaceFriendlyName
     applicationGroupReferences: [
       appGroup.id
+    ]
+  }
+}
+
+// ── Host Pool Diagnostic Settings ──
+resource hostPoolDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'diag-hostpool'
+  scope: hostPool
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'Checkpoint', enabled: true }
+      { category: 'Error', enabled: true }
+      { category: 'Management', enabled: true }
+      { category: 'Connection', enabled: true }
+      { category: 'HostRegistration', enabled: true }
+      { category: 'AgentHealthStatus', enabled: true }
+      { category: 'NetworkData', enabled: true }
+      { category: 'SessionHostManagement', enabled: true }
+    ]
+  }
+}
+
+// ── Application Group Diagnostic Settings ──
+resource appGroupDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'diag-appgroup'
+  scope: appGroup
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'Checkpoint', enabled: true }
+      { category: 'Error', enabled: true }
+      { category: 'Management', enabled: true }
+    ]
+  }
+}
+
+// ── Workspace Diagnostic Settings ──
+resource workspaceDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'diag-workspace'
+  scope: workspace
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      { category: 'Checkpoint', enabled: true }
+      { category: 'Error', enabled: true }
+      { category: 'Management', enabled: true }
+      { category: 'Feed', enabled: true }
     ]
   }
 }

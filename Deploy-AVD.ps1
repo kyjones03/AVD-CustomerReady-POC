@@ -634,6 +634,11 @@ function Get-DeploymentParameters {
                 $selectedLa = $existingLas[[int]$laIdx - 1]
                 $params.existingLogAnalyticsName = $selectedLa.Name
                 $params.existingLogAnalyticsRg = $selectedLa.RG
+                $laId = az monitor log-analytics workspace show `
+                    --workspace-name $selectedLa.Name `
+                    --resource-group $selectedLa.RG `
+                    --query id -o tsv 2>$null
+                if ($laId) { $params.existingLogAnalyticsWorkspaceId = $laId.Trim() }
                 $params.deployMonitoring = $false
             }
         }
@@ -767,6 +772,7 @@ function Start-AVDDeployment {
     if ($Params.storageAccountName)  { $azParams += "storageAccountName=$($Params.storageAccountName)" }
     if ($Params.keyVaultName)        { $azParams += "keyVaultName=$($Params.keyVaultName)" }
     if ($Params.logAnalyticsName)    { $azParams += "logAnalyticsName=$($Params.logAnalyticsName)" }
+    if ($Params.existingLogAnalyticsWorkspaceId) { $azParams += "existingLogAnalyticsWorkspaceId=$($Params.existingLogAnalyticsWorkspaceId)" }
     if ($Params.currentUserObjectId) { $azParams += "currentUserObjectId=$($Params.currentUserObjectId)" }
     if ($Params.existingSubnetId)    { $azParams += "existingSubnetId=$($Params.existingSubnetId)" }
     if ($Params.existingVnetId)      { $azParams += "existingVnetId=$($Params.existingVnetId)" }

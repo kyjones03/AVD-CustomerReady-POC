@@ -70,6 +70,7 @@ param galleryName string = 'acgavdpoc'
 param deployMonitoring bool = true
 param logAnalyticsName string = ''
 param deployDcr bool = true
+param existingLogAnalyticsWorkspaceId string = ''
 
 // ── Optional features ──
 param deployDomain bool = false
@@ -173,6 +174,7 @@ module avdCore 'modules/avdcore.bicep' = {
     subnetId: deployNetworking ? networking!.outputs.subnetId : existingSubnetId
     publicIpName: publicIpName
     deployPublicIp: !deployBastion
+    logAnalyticsWorkspaceId: deployMonitoring ? monitoring!.outputs.logAnalyticsId : existingLogAnalyticsWorkspaceId
     baseTime: baseTime
   }
   dependsOn: [
