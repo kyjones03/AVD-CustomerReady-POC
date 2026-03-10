@@ -74,7 +74,7 @@ function Invoke-VMQuotaCheck {
 
     $result = @{
         Checked        = $false
-        Sufficient     = $true   # default safe — non-fatal if CSV miss
+        Sufficient     = $true   # default safe - non-fatal if CSV miss
         Available      = 0
         Needed         = 0
         Family         = ''
@@ -83,7 +83,7 @@ function Invoke-VMQuotaCheck {
 
     # -- CSV lookup --
     if (-not (Test-Path $CsvPath)) {
-        $result.WarningMessage = "Size map CSV not found at '$CsvPath' — quota check skipped."
+        $result.WarningMessage = "Size map CSV not found at '$CsvPath' - quota check skipped."
         return $result
     }
 
@@ -94,7 +94,7 @@ function Invoke-VMQuotaCheck {
     $entry = $rows | Where-Object { $_.Size -ieq $VmSize } | Select-Object -First 1
 
     if (-not $entry) {
-        $result.WarningMessage = "'$VmSize' not found in size map — quota check skipped. Verify manually if needed."
+        $result.WarningMessage = "'$VmSize' not found in size map - quota check skipped. Verify manually if needed."
         return $result
     }
 
@@ -110,7 +110,7 @@ function Invoke-VMQuotaCheck {
             --output json 2>$null
 
         if (-not $usageJson -or $usageJson -eq '[]') {
-            $result.WarningMessage = "No quota entry for family '$($entry.Family)' in '$Location' — check skipped."
+            $result.WarningMessage = "No quota entry for family '$($entry.Family)' in '$Location' - check skipped."
             $result.Checked = $false
             return $result
         }
@@ -120,7 +120,7 @@ function Invoke-VMQuotaCheck {
         $result.Sufficient = ($result.Available -ge $result.Needed)
     }
     catch {
-        $result.WarningMessage = "Quota query failed: $($_.Exception.Message) — check skipped."
+        $result.WarningMessage = "Quota query failed: $($_.Exception.Message) - check skipped."
         $result.Checked = $false
     }
 
@@ -454,17 +454,17 @@ function Get-DeploymentParameters {
             $quotaResult = Invoke-VMQuotaCheck -VmSize $params.vmSize -Location $params.location -CsvPath $quotaCsvPath
 
             if (-not $quotaResult.Checked) {
-                # CSV miss or API failure — advisory only, not a hard gate
+                # CSV miss or API failure - advisory only, not a hard gate
                 Write-Host "  NOTE: $($quotaResult.WarningMessage)" -ForegroundColor Yellow
                 break
             }
 
             if ($quotaResult.Sufficient) {
-                Write-Host "  Quota OK — $($quotaResult.Available) vCPUs available, $($quotaResult.Needed) needed ($($quotaResult.Family))." -ForegroundColor Green
+                Write-Host "  Quota OK - $($quotaResult.Available) vCPUs available, $($quotaResult.Needed) needed ($($quotaResult.Family))." -ForegroundColor Green
                 break
             }
 
-            # Insufficient quota — present options
+            # Insufficient quota - present options
             Write-Host ""
             Write-Host "  INSUFFICIENT QUOTA" -ForegroundColor Red
             Write-Host "  Family    : $($quotaResult.Family)" -ForegroundColor Red
@@ -484,7 +484,7 @@ function Get-DeploymentParameters {
                 Write-Host "Deployment cancelled." -ForegroundColor Yellow
                 exit 0
             }
-            # choice 1 — loop back to re-prompt
+            # choice 1 - loop back to re-prompt
         } while (-not $quotaResult.Sufficient)
 
         $params.quotaResult      = $quotaResult
@@ -711,11 +711,11 @@ function Start-AVDDeployment {
     if ($Params.deployTemplateVm -and $Params.quotaResult) {
         $qr = $Params.quotaResult
         if (-not $qr.Checked) {
-            Write-Host "  VM Quota:           [SKIPPED — $($qr.WarningMessage)]" -ForegroundColor Yellow
+            Write-Host "  VM Quota:           [SKIPPED - $($qr.WarningMessage)]" -ForegroundColor Yellow
         } elseif ($qr.Sufficient) {
-            Write-Host "  VM Quota:           $($qr.Family) — $($qr.Available) available / $($qr.Needed) needed  OK" -ForegroundColor Green
+            Write-Host "  VM Quota:           $($qr.Family) - $($qr.Available) available / $($qr.Needed) needed  OK" -ForegroundColor Green
         } else {
-            Write-Host "  VM Quota:           $($qr.Family) — $($qr.Available) available / $($qr.Needed) needed  [WARNING — proceeding at user request]" -ForegroundColor Yellow
+            Write-Host "  VM Quota:           $($qr.Family) - $($qr.Available) available / $($qr.Needed) needed  [WARNING - proceeding at user request]" -ForegroundColor Yellow
         }
     }
     Write-Host "  Storage:            $(if ($Params.deployStorage) { 'New' } else { "Existing ($($Params.existingStorageAccountName))" })"
@@ -928,11 +928,11 @@ function Watch-DeploymentProgress {
             $opState = $op.properties.provisioningState
             $opDuration = '-'
             if ($op.properties.duration) {
-                # Completed operation — ARM reports the true wall-clock duration as ISO 8601
+                # Completed operation - ARM reports the true wall-clock duration as ISO 8601
                 $opDuration = Format-IsoDuration $op.properties.duration
             }
             elseif ($op.properties.timestamp) {
-                # In-progress — timestamp is when the op was accepted; show live elapsed
+                # In-progress - timestamp is when the op was accepted; show live elapsed
                 $opStart   = [DateTime]::Parse($op.properties.timestamp).ToUniversalTime()
                 $opElapsed = (Get-Date).ToUniversalTime() - $opStart
                 if ($opElapsed.TotalSeconds -gt 0) {
