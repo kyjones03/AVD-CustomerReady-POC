@@ -12,13 +12,15 @@ An interactive, IaC-driven solution to deploy a **customer-ready Azure Virtual D
 - **Greenfield & Brownfield** — deploy everything from scratch or leverage existing VNet / Key Vault / Storage / Log Analytics
 - **Live progress tracking** — real-time status table with accurate per-operation durations sourced directly from the ARM operations API
 - **Modular Bicep templates** — clean, subscription-scoped infrastructure as code
-- **Scaling plan** — auto-created and linked to the host pool (Personal or Pooled)
+- **Scaling plan** — auto-created and linked to the host pool (Personal or Pooled); skipped for Regional scope deployments
 - **Security-first** — Key Vault integration, Trusted Launch, RBAC authorization, no secrets in source
 - **AVD diagnostics** — diagnostic settings automatically configured on the Host Pool, Application Group, and Workspace, sending logs to the Log Analytics Workspace
 - **Private endpoints** — optional network isolation for Key Vault and FSLogix Storage Account with private DNS auto-registration
 - **Bastion-aware** — skips public IP and uses blank NSG when Bastion is enabled
 - **Image picker** — dynamically lists available Windows 11 offers and SKUs from your region; default SKU is automatically matched to pool type (`win11-24h2-ent` for Personal, `win11-24h2-avd` for Pooled)
 - **Quota pre-flight** — checks available vCPU quota for the chosen VM size before deployment starts, with an interactive retry loop if quota is insufficient
+- **Deployment scope selection** — choose Geographical (default, metadata distributed across paired Azure regions) or Regional [PREVIEW] (all metadata in a single region for data residency needs)
+- **Secure credential entry** — admin password confirmation loops until both entries match before proceeding
 
 ---
 
@@ -28,7 +30,7 @@ An interactive, IaC-driven solution to deploy a **customer-ready Azure Virtual D
 |---|---|
 | Azure CLI | 2.50+ |
 | Bicep CLI | 0.20+ (auto-installed if missing) |
-| PowerShell | 7.x recommended; 5.1 supported |
+| PowerShell | 7.x recommended; 5.1 fully supported (all JSON parsing is PS5-safe) |
 | Azure Subscription | Contributor role at subscription scope for resource deployment |
 | Azure Subscription | Owner, Role-Based Access Administrator, or User Access Administrator at subscription or resource group scope for AVD service principal role assignment |
 | Azure AD | Permissions to register apps (if using AAD Kerberos for storage) |
@@ -88,9 +90,10 @@ The script will:
 1. Verify prerequisites (Azure CLI, Bicep, login status)
 2. Ask you to choose **Greenfield** or **Brownfield**
 3. Collect all parameters with sensible defaults
-4. Let you pick a Windows 11 image from your region
-5. Deploy asynchronously with a **live progress table** showing per-resource status
-6. Display a summary with resource names, registration token, portal links, and any errors
+4. Prompt for a VM admin password — the confirmation prompt loops until both entries match
+5. Let you pick a Windows 11 image from your region
+6. Deploy asynchronously with a **live progress table** showing per-resource status
+7. Display a summary with resource names, registration token, portal links, and any errors
 
 ---
 
@@ -103,7 +106,7 @@ The script will:
 │   ├── networking.bicep           # VNet, Subnets (AVD + PE), NSG
 │   ├── keyvault.bicep             # Key Vault + secrets + RBAC + optional network ACLs
 │   ├── avdcore.bicep              # Host pool, scaling plan, app group, workspace, storage, gallery, VM, diagnostic settings
-│   ├── monitor.bicep              # Log Analytics + Data Collection Rule
+│   ├── monitor.bicep              # Log Analytics + Data Collection Rule (perf counters → Azure Monitor Metrics)
 │   ├── domain.bicep               # Domain controller (conditional)
 │   ├── bastion.bicep              # Azure Bastion Developer SKU (conditional)
 │   ├── roleassignment.bicep       # AVD service principal role assignments
@@ -157,6 +160,19 @@ When existing resources are provided, the corresponding Bicep module is skipped.
 
 ---
 
+## Deployment Scope
+
+The deployment scope controls where Azure Virtual Desktop host pool metadata is stored. You are prompted to choose at the start of deployment.
+
+| Option | Behaviour |
+|---|---|
+| **Geographical** *(default)* | Metadata distributed across paired Azure regions within the same geography — the standard, most resilient option |
+| **Regional** *(preview)* | Metadata stored entirely within the selected Azure region — for strict data residency requirements |
+
+> **Preview notice:** Regional host pools are currently in public preview and have specific limitations — notably, scaling plans are not supported and will be skipped automatically. Review the [Regional host pools documentation](https://learn.microsoft.com/en-us/azure/virtual-desktop/regional-host-pools) before selecting this option. The deployment script surfaces this reminder inline when Regional is chosen.
+
+---
+
 ## Resources Deployed
 
 | Resource | Module | When Deployed |
@@ -166,7 +182,7 @@ When existing resources are provided, the corresponding Bicep module is skipped.
 | NSG, VNet, AVD Subnet | `networking.bicep` | Greenfield only |
 | PE Subnet | `networking.bicep` | When private endpoints enabled |
 | Key Vault + Secret | `keyvault.bicep` | Greenfield only |
-| Host Pool + Scaling Plan | `avdcore.bicep` | Always |
+| Host Pool + Scaling Plan | `avdcore.bicep` | Always (Scaling Plan skipped for Regional scope) |
 | Application Group + Workspace | `avdcore.bicep` | Always |
 | Diagnostic Settings (Host Pool, App Group, Workspace) | `avdcore.bicep` | When a Log Analytics Workspace is available |
 | Storage Account (FSLogix) | `avdcore.bicep` | Greenfield only (skippable) |
@@ -174,7 +190,7 @@ When existing resources are provided, the corresponding Bicep module is skipped.
 | Template VM + NIC | `avdcore.bicep` | Optional (skippable in brownfield) |
 | Public IP | `avdcore.bicep` | Only when no Bastion |
 | Log Analytics Workspace | `monitor.bicep` | Greenfield only |
-| Data Collection Rule | `monitor.bicep` | Optional |
+| Data Collection Rule (perf → Azure Monitor Metrics) | `monitor.bicep` | Optional |
 | Domain Controller VM | `domain.bicep` | Optional |
 | Azure Bastion | `bastion.bicep` | Optional |
 | Private DNS Zones + VNet Links | `privateendpoints.bicep` | When private endpoints enabled |
@@ -231,8 +247,8 @@ After the VM size is entered, the deployment script automatically checks whether
 |---|---|
 | Sufficient quota | Green confirmation line; continues to next prompt |
 | Insufficient quota | Shows family / available / needed in red; offers: choose different size, proceed anyway, or exit |
-| Size not in CSV | Advisory warning only — continues (non-blocking; useful for B-series, L-series, custom sizes) |
-| API / CLI error | Advisory warning only — continues |
+| Size not in CSV | Warning displayed; offers: choose different size, proceed anyway, or exit |
+| API / CLI error | Warning displayed; offers: choose different size, proceed anyway, or exit |
 
 The quota result is echoed in the pre-deployment summary so the operator has a clear record before confirming.
 
@@ -264,7 +280,7 @@ Exit codes: `0` = sufficient, `1` = CSV miss or CLI error, `2` = quota too low.
 | **Key Vault** | Stores VM admin password; RBAC authorization enabled; soft delete with 90-day retention |
 | **Private endpoints** | Optional: Key Vault and FSLogix Storage network-isolated with `defaultAction: Deny` + private DNS zones (`privatelink.vaultcore.azure.net`, `privatelink.file.core.windows.net`) |
 | **Trusted Launch** | Secure Boot + vTPM enabled by default on all VMs |
-| **NSG** | Default allows RDP from `*` (warns operator); blank NSG when Bastion is enabled |
+| **NSG** | Default allows RDP from `*`; operator warning displayed only when `*` is used — suppressed when a specific IP or CIDR is entered; blank NSG when Bastion is enabled |
 | **No Public IP with Bastion** | Template VM skips public IP when Bastion provides secure access |
 | **RBAC** | Key Vault Secrets Officer for deploying user; Power On Contributor + Power On Off Contributor for AVD service principal |
 
