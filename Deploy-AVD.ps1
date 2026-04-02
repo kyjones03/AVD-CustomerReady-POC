@@ -283,10 +283,12 @@ function Get-DeploymentParameters {
     }
     else {
         Write-Host "Fetching existing resource groups..." -ForegroundColor Yellow
-        $existingRgs = @(az group list --query "[].name" -o json 2>$null | ConvertFrom-Json)
+        $rgJson = az group list --query "[].name" -o json 2>$null
+        $existingRgs = @()
+        if ($rgJson) { $parsed = ($rgJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingRgs += $item } }
 
         if ($existingRgs -and $existingRgs.Count -gt 0) {
-            $selectedCore = Read-ListSelection "`nExisting Resource Groups:" $existingRgs $null "rg-avd-core-poc"
+            $selectedCore = Read-ListSelection "`nSelect Core RG:" $existingRgs $null "rg-avd-core-poc"
             $params.coreRgName = if ($selectedCore -is [string]) { $selectedCore } else { $selectedCore }
 
             $selectedNet = Read-ListSelection "`nSelect Networking RG:" $existingRgs $null "rg-avd-network-poc"
@@ -314,10 +316,13 @@ function Get-DeploymentParameters {
         $params.subnetName      = Read-PromptWithDefault "Subnet name" "snet-avd-poc"
         $params.subnetPrefix    = Read-PromptWithDefault "Subnet prefix" "10.0.0.0/24"
         $params.nsgName         = Read-PromptWithDefault "NSG name" "nsg-avd-poc"
+        $params.nsgAllowRdpFrom = Read-PromptWithDefault "RDP source IP or CIDR (* = any)" "*"
 
-        Write-Host ""
-        Write-Host "  WARNING: Default NSG rule allows RDP from ANY source (*)." -ForegroundColor Red
-        Write-Host "  Scope the source IP to your network for production use." -ForegroundColor Red
+        if ($params.nsgAllowRdpFrom -eq '*') {
+            Write-Host ""
+            Write-Host "  WARNING: NSG rule allows RDP from ANY source (*)." -ForegroundColor Red
+            Write-Host "  Scope the source IP to your network for production use." -ForegroundColor Red
+        }
 
         $customDns = Read-YesNo "`nConfigure custom DNS servers?" $false
         if ($customDns) {
@@ -330,7 +335,9 @@ function Get-DeploymentParameters {
     }
     else {
         Write-Host "Fetching existing Virtual Networks..." -ForegroundColor Yellow
-        $existingVnets = @(az network vnet list --query "[].{Name:name, ResourceGroup:resourceGroup, Address:addressSpace.addressPrefixes[0]}" -o json 2>$null | ConvertFrom-Json)
+        $vnetJson = az network vnet list --query "[].{Name:name, ResourceGroup:resourceGroup, Address:addressSpace.addressPrefixes[0]}" -o json 2>$null
+        $existingVnets = @()
+        if ($vnetJson) { $parsed = ($vnetJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingVnets += $item } }
 
         if ($existingVnets -and $existingVnets.Count -gt 0) {
             Write-Host "`nExisting Virtual Networks:"
@@ -341,10 +348,12 @@ function Get-DeploymentParameters {
             $selectedVnet = $existingVnets[[int]$vnetIdx - 1]
 
             # Get subnets
-            $existingSubnets = @(az network vnet subnet list `
+            $subnetJson = az network vnet subnet list `
                 --resource-group $selectedVnet.ResourceGroup `
                 --vnet-name $selectedVnet.Name `
-                --query "[].{Name:name, Prefix:addressPrefix, Id:id}" -o json | ConvertFrom-Json)
+                --query "[].{Name:name, Prefix:addressPrefix, Id:id}" -o json 2>$null
+            $existingSubnets = @()
+            if ($subnetJson) { $parsed = ($subnetJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingSubnets += $item } }
 
             if ($existingSubnets -and $existingSubnets.Count -gt 0) {
                 Write-Host "`nSubnets in $($selectedVnet.Name):"
@@ -379,6 +388,17 @@ function Get-DeploymentParameters {
         "Pooled    (Shared desktops)"
     ) 1
     $params.hostPoolType          = if ($poolTypeChoice -eq 1) { 'Personal' } else { 'Pooled' }
+    Write-Host ""
+    $deploymentScopeChoice = Read-Selection "Deployment scope:" @(
+        "Geographical  (Resources distributed across paired regions)"    
+        "Regional[PREVIEW]  (All resources in same region)" 
+    ) 1
+    $params.deploymentScope       = if ($deploymentScopeChoice -eq 1) { 'Geographical' } else { 'Regional' }
+    Write-Host ""
+    if ($deploymentScopeChoice -eq 2) {
+        Write-Host "  NOTE: Regional deployment scope is currently in preview and has specific limitations. " -ForegroundColor Yellow
+        Write-Host "  Refer to the README before selecting this option" -ForegroundColor Yellow
+    }
     # SKU recommendation tracks pool type: personal desktops use the enterprise image,
     # pooled desktops use the multi-session AVD-optimised image.
     $recommendedSku = if ($params.hostPoolType -eq 'Personal') { 'win11-24h2-ent' } else { 'win11-24h2-avd' }
@@ -397,10 +417,12 @@ function Get-DeploymentParameters {
 
     if ($params.deployTemplateVm) {
         Write-Host "Fetching available Windows 11 image offers for '$($params.location)'..." -ForegroundColor Yellow
-        $offers = @(az vm image list-offers `
+        $offersJson = az vm image list-offers `
             --location $params.location `
             --publisher MicrosoftWindowsDesktop `
-            --query "[?contains(name, 'windows-11')].name" -o json 2>$null | ConvertFrom-Json)
+            --query "[?contains(name, 'windows-11')].name" -o json 2>$null
+        $offers = @()
+        if ($offersJson) { $parsed = ($offersJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $offers += $item } }
 
         if ($offers -and $offers.Count -gt 0) {
             Write-Host "`nAvailable Windows 11 Offers:"
@@ -416,7 +438,8 @@ function Get-DeploymentParameters {
                 --location $params.location `
                 --publisher MicrosoftWindowsDesktop `
                 --offer $selectedOffer `
-                --query "[].name" -o json 2>$null | ConvertFrom-Json)
+                --query "[].name" -o tsv 2>$null) |
+                Where-Object { $_ -and $_.Trim() }
 
             if ($skus -and $skus.Count -gt 0) {
                 # Find the 1-based index of the recommended SKU; fall back to 1 if not listed.
@@ -454,9 +477,25 @@ function Get-DeploymentParameters {
             $quotaResult = Invoke-VMQuotaCheck -VmSize $params.vmSize -Location $params.location -CsvPath $quotaCsvPath
 
             if (-not $quotaResult.Checked) {
-                # CSV miss or API failure - advisory only, not a hard gate
-                Write-Host "  NOTE: $($quotaResult.WarningMessage)" -ForegroundColor Yellow
-                break
+                # CSV miss or API failure - let user retry, proceed, or exit
+                Write-Host "  WARNING: $($quotaResult.WarningMessage)" -ForegroundColor Yellow
+                Write-Host ""
+                $missChoice = Read-Selection "How would you like to proceed?" @(
+                    "Choose a different VM size"
+                    "Proceed anyway  (skip quota check)"
+                    "Exit"
+                ) 1
+                if ($missChoice -eq 2) {
+                    Write-Host "  Proceeding without quota validation at user request." -ForegroundColor Yellow
+                    break
+                }
+                if ($missChoice -eq 3) {
+                    Write-Host "Deployment cancelled." -ForegroundColor Yellow
+                    exit 0
+                }
+                # choice 1 - loop back to re-prompt
+                $quotaResult.Sufficient = $false
+                continue
             }
 
             if ($quotaResult.Sufficient) {
@@ -508,11 +547,13 @@ function Get-DeploymentParameters {
 
     $params.deployStorage = $true
     if (-not $isGreenfield) {
-        $useExistingSa = Read-YesNo "Use an existing Storage Account?" $false
+        $useExistingSa = Read-YesNo "Use an existing Storage Account?" $true
         if ($useExistingSa) {
             Write-Host "Fetching existing Storage Accounts..." -ForegroundColor Yellow
-            $existingSas = @(az storage account list `
-                --query "[].{Name:name, RG:resourceGroup, Kind:kind, SKU:sku.name}" -o json 2>$null | ConvertFrom-Json)
+            $saJson = az storage account list `
+                --query "[].{Name:name, RG:resourceGroup, Kind:kind, SKU:sku.name}" -o json 2>$null
+            $existingSas = @()
+            if ($saJson) { $parsed = ($saJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingSas += $item } }
 
             if ($existingSas -and $existingSas.Count -gt 0) {
                 Write-Host "`nExisting Storage Accounts:"
@@ -549,10 +590,12 @@ function Get-DeploymentParameters {
     # Key Vault - brownfield asks first
     $params.deployKeyVault = $true
     if (-not $isGreenfield) {
-        $useExistingKv = Read-YesNo "Use an existing Key Vault?" $false
+        $useExistingKv = Read-YesNo "Use an existing Key Vault?" $true
         if ($useExistingKv) {
             Write-Host "Fetching existing Key Vaults..." -ForegroundColor Yellow
-            $existingKvs = @(az keyvault list --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null | ConvertFrom-Json)
+            $kvJson = az keyvault list --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null
+            $existingKvs = @()
+            if ($kvJson) { $parsed = ($kvJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingKvs += $item } }
 
             if ($existingKvs -and $existingKvs.Count -gt 0) {
                 Write-Host "`nExisting Key Vaults:"
@@ -581,20 +624,26 @@ function Get-DeploymentParameters {
 
     # Admin password
     Write-Host "`nEnter the VM admin password (stored in Key Vault):" -ForegroundColor Yellow
-    $securePassword  = Read-Host -AsSecureString "  Admin password"
-    $confirmPassword = Read-Host -AsSecureString "  Confirm password"
+    $passwordsMatch = $false
+    do {
+        $securePassword  = Read-Host -AsSecureString "  Admin password"
+        $confirmPassword = Read-Host -AsSecureString "  Confirm password"
 
-    $bstr1 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-    $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmPassword)
-    $plain1 = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr1)
-    $plain2 = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr2)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr1)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2)
+        $bstr1 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+        $bstr2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmPassword)
+        $plain1 = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr1)
+        $plain2 = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr2)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr1)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr2)
 
-    if ($plain1 -ne $plain2) {
-        Write-Host "Passwords do not match. Exiting." -ForegroundColor Red
-        exit 1
-    }
+        $passwordsMatch = ($plain1 -eq $plain2)
+        if (-not $passwordsMatch) {
+            Write-Host "  Passwords do not match. Please try again." -ForegroundColor Red
+            $plain1 = $null
+            $plain2 = $null
+        }
+    } while (-not $passwordsMatch)
+
     $params.vmAdminPassword = $plain1
     $plain2 = $null
 
@@ -619,11 +668,13 @@ function Get-DeploymentParameters {
     $params.deployMonitoring = $true
 
     if (-not $isGreenfield) {
-        $useExistingLa = Read-YesNo "Use an existing Log Analytics workspace?" $false
+        $useExistingLa = Read-YesNo "Use an existing Log Analytics workspace?" $true
         if ($useExistingLa) {
             Write-Host "Fetching existing Log Analytics workspaces..." -ForegroundColor Yellow
-            $existingLas = @(az monitor log-analytics workspace list `
-                --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null | ConvertFrom-Json)
+            $laJson = az monitor log-analytics workspace list `
+                --query "[].{Name:name, RG:resourceGroup}" -o json 2>$null
+            $existingLas = @()
+            if ($laJson) { $parsed = ($laJson -join '') | ConvertFrom-Json; foreach ($item in $parsed) { $existingLas += $item } }
 
             if ($existingLas -and $existingLas.Count -gt 0) {
                 Write-Host "`nExisting Workspaces:"
@@ -703,10 +754,13 @@ function Start-AVDDeployment {
 
     Write-Host "  Deployment Path:    $(if ($Params.isGreenfield) { 'Greenfield' } else { 'Brownfield' })"
     Write-Host "  Location:           $($Params.location)"
+    write-Host "  Deployment Scope:   $($Params.deploymentScope)"
     Write-Host "  Core RG:            $($Params.coreRgName)"
     Write-Host "  Network RG:         $($Params.networkRgName)"
     Write-Host "  Monitor RG:         $($Params.monitorRgName)"
     Write-Host "  Host Pool:          $($Params.hostPoolName) ($($Params.hostPoolType))"
+    Write-Host "  App Group:          $($Params.appGroupName)"
+    Write-Host "  Workspace:          $($Params.workspaceName) (Friendly Name: $($Params.workspaceFriendlyName))"
     Write-Host "  Template VM:        $(if ($Params.deployTemplateVm) { "$($Params.vmSize) - $($Params.vmImageOffer)/$($Params.vmImageSku)" } else { 'Skipped (existing)' })"
     if ($Params.deployTemplateVm -and $Params.quotaResult) {
         $qr = $Params.quotaResult
@@ -745,6 +799,7 @@ function Start-AVDDeployment {
         "monitorRgName=$($Params.monitorRgName)"
         "deployNetworking=$($Params.deployNetworking.ToString().ToLower())"
         "hostPoolType=$($Params.hostPoolType)"
+        "deploymentScope=$($Params.deploymentScope)"
         "hostPoolName=$($Params.hostPoolName)"
         "appGroupName=$($Params.appGroupName)"
         "workspaceName=$($Params.workspaceName)"
@@ -789,6 +844,7 @@ function Start-AVDDeployment {
         if ($Params.subnetName)       { $azParams += "subnetName=$($Params.subnetName)" }
         if ($Params.subnetPrefix)     { $azParams += "subnetPrefix=$($Params.subnetPrefix)" }
         if ($Params.nsgName)          { $azParams += "nsgName=$($Params.nsgName)" }
+        if ($Params.nsgAllowRdpFrom)  { $azParams += "nsgAllowRdpFrom=$($Params.nsgAllowRdpFrom)" }
     }
     if ($Params.dnsServers -and $Params.dnsServers.Count -gt 0) {
         $dnsJson = $Params.dnsServers | ConvertTo-Json -Compress
@@ -841,7 +897,7 @@ function Start-AVDDeployment {
         $partialResult = $null
         try {
             $partialJson = az deployment sub show --name $deploymentName --output json 2>$null
-            if ($partialJson) { $partialResult = $partialJson | ConvertFrom-Json }
+            if ($partialJson) { $partialResult = ($partialJson -join '') | ConvertFrom-Json }
         } catch {}
 
         return @{
@@ -866,7 +922,7 @@ function Watch-DeploymentProgress {
 
     $startTime = Get-Date
     $terminalStates = @('Succeeded', 'Failed', 'Canceled')
-    $previousLineCount = 0
+    $startRow = -1
 
     while ($true) {
         $elapsed = (Get-Date) - $startTime
@@ -879,23 +935,24 @@ function Watch-DeploymentProgress {
             Start-Sleep -Seconds $PollIntervalSeconds
             continue
         }
-        $deploy = $deployJson | ConvertFrom-Json
+        $deploy = ($deployJson -join '') | ConvertFrom-Json
         $overallState = $deploy.properties.provisioningState
 
         # Get per-operation status
         $opsJson = az deployment operation sub list --name $DeploymentName --output json 2>$null
         $ops = @()
         if ($opsJson) {
-            $ops = @($opsJson | ConvertFrom-Json)
+            # In PS5, ConvertFrom-Json returns a JSON array as a single object (no enumeration).
+            # Using foreach directly over the parsed result handles both PS5 and PS7 correctly.
+            $parsed = ($opsJson -join '') | ConvertFrom-Json
+            foreach ($item in $parsed) { $ops += $item }
         }
 
-        # Clear previous output by moving cursor up
-        if ($previousLineCount -gt 0) {
-            for ($i = 0; $i -lt $previousLineCount; $i++) {
-                [Console]::SetCursorPosition(0, [Console]::CursorTop - 1)
-                Write-Host (' ' * [Console]::WindowWidth) -NoNewline
-                [Console]::SetCursorPosition(0, [Console]::CursorTop)
-            }
+        # Jump back to saved start position, or record it on first iteration
+        if ($startRow -ge 0) {
+            [Console]::SetCursorPosition(0, $startRow)
+        } else {
+            $startRow = [Console]::CursorTop
         }
 
         # Build status display
@@ -944,24 +1001,25 @@ function Watch-DeploymentProgress {
         }
 
         $lines += ""
-        $previousLineCount = $lines.Count
 
-        # Print all lines
+        # Print all lines (pad to window width - 1 to overwrite any longer previous lines)
+        $padWidth = [Math]::Max(0, [Console]::WindowWidth - 1)
         foreach ($line in $lines) {
+            $paddedLine = $line.PadRight($padWidth)
             if ($line -eq $lines[0]) {
-                Write-Host $line -ForegroundColor $stateColor
+                Write-Host $paddedLine -ForegroundColor $stateColor
             }
             elseif ($line -match 'Succeeded') {
-                Write-Host $line -ForegroundColor Green
+                Write-Host $paddedLine -ForegroundColor Green
             }
             elseif ($line -match 'Failed') {
-                Write-Host $line -ForegroundColor Red
+                Write-Host $paddedLine -ForegroundColor Red
             }
             elseif ($line -match 'Running|Accepted') {
-                Write-Host $line -ForegroundColor Cyan
+                Write-Host $paddedLine -ForegroundColor Cyan
             }
             else {
-                Write-Host $line
+                Write-Host $paddedLine
             }
         }
 
@@ -975,7 +1033,7 @@ function Watch-DeploymentProgress {
 
     # Return final deployment result
     $finalJson = az deployment sub show --name $DeploymentName --output json 2>$null
-    return ($finalJson | ConvertFrom-Json)
+    return (($finalJson -join '') | ConvertFrom-Json)
 }
 
 # ==========================================================
