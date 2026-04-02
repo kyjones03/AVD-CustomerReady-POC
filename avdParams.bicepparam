@@ -5,7 +5,7 @@
 using 'avdMain.bicep'
 
 // General
-param location = 'eastus2'
+param location = 'centralus'
 
 // Resource Groups
 param coreRgName = 'rg-avd-core-poc'
@@ -19,6 +19,7 @@ param vnetAddressSpace = '10.0.0.0/16'
 param subnetName = 'snet-avd-poc'
 param subnetPrefix = '10.0.0.0/24'
 param nsgName = 'nsg-avd-poc'
+param nsgAllowRdpFrom = '*' // WARNING: allows RDP from ANY source. Use only for testing, or specify a more restrictive source range for production deployments.
 param dnsServers = []
 param existingSubnetId = ''
 param existingVnetId = ''
@@ -35,11 +36,14 @@ param keyVaultName = ''
 param currentUserObjectId = ''
 
 // AVD
+param deploymentScope = 'Regional'
 param hostPoolType = 'Personal'
+param preferredAppGroupType = 'Desktop'
 param hostPoolName = 'hp-avd-poc'
 param appGroupName = 'ag-avd-poc'
 param workspaceName = 'ws-avd-poc'
 param workspaceFriendlyName = 'AVD POC Workspace'
+
 
 // Compute
 param deployTemplateVm = true

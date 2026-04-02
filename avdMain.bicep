@@ -19,6 +19,7 @@ param vnetAddressSpace string = '10.0.0.0/16'
 param subnetName string = 'snet-avd-poc'
 param subnetPrefix string = '10.0.0.0/24'
 param nsgName string = 'nsg-avd-poc'
+param nsgAllowRdpFrom string = '*' // WARNING: allows RDP from ANY source. Use only for testing, or specify a more restrictive source range for production deployments.
 param dnsServers array = []
 
 // Brownfield existing resource references
@@ -41,7 +42,9 @@ param vmAdminPassword string
 param currentUserObjectId string = ''
 
 // ── AVD Core ──
+param deploymentScope string = 'Regional'
 param hostPoolType string = 'Personal'
+param preferredAppGroupType string = 'Desktop'
 param hostPoolName string = 'hp-avd-poc'
 param appGroupName string = 'ag-avd-poc'
 param workspaceName string = 'ws-avd-poc'
@@ -124,6 +127,7 @@ module networking 'modules/networking.bicep' = if (deployNetworking) {
     subnetName: subnetName
     subnetPrefix: subnetPrefix
     nsgName: nsgName
+    nsgAllowRdpFrom: nsgAllowRdpFrom
     dnsServers: dnsServers
     deployBastion: deployBastion
     deployPrivateEndpoints: deployPrivateEndpoints
@@ -151,8 +155,10 @@ module avdCore 'modules/avdcore.bicep' = {
   name: 'avdCoreDeployment'
   params: {
     location: location
+    deploymentScope: deploymentScope
     hostPoolName: hostPoolName
     hostPoolType: hostPoolType
+    preferredAppGroupType: preferredAppGroupType
     appGroupName: appGroupName
     workspaceName: workspaceName
     workspaceFriendlyName: workspaceFriendlyName
