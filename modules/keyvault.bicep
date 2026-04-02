@@ -11,7 +11,7 @@ param vmAdminPassword string
 param currentUserObjectId string = ''
 param deployPrivateEndpoints bool = false
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2025-05-01' = {
   name: keyVaultName
   location: location
   properties: {
@@ -37,7 +37,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-resource adminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource adminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
   parent: keyVault
   name: 'AVDAdminPassword'
   properties: {

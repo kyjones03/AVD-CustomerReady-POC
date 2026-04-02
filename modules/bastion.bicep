@@ -7,7 +7,7 @@ param location string
 param bastionName string = 'bas-avd-poc'
 param vnetId string
 
-resource bastion 'Microsoft.Network/bastionHosts@2024-01-01' = {
+resource bastion 'Microsoft.Network/bastionHosts@2025-05-01' = {
   name: bastionName
   location: location
   sku: {

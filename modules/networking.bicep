@@ -4,15 +4,16 @@
 
 param location string
 param vnetName string
-param vnetAddressSpace string = '10.0.0.0/16'
-param subnetName string = 'snet-avd-poc'
-param subnetPrefix string = '10.0.0.0/24'
-param nsgName string = 'nsg-avd-poc'
+param vnetAddressSpace string
+param subnetName string
+param subnetPrefix string
+param nsgName string
+param nsgAllowRdpFrom string
 param dnsServers array = []
 param deployBastion bool = false
 param deployPrivateEndpoints bool = false
-param peSubnetName string = 'snet-pe-poc'
-param peSubnetPrefix string = '10.0.1.0/24'
+param peSubnetName string
+param peSubnetPrefix string
 
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
   name: nsgName
@@ -28,7 +29,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           sourcePortRange: '*'
           destinationPortRange: '3389'
-          sourceAddressPrefix: '*'
+          sourceAddressPrefix: nsgAllowRdpFrom
           destinationAddressPrefix: '*'
         }
       }

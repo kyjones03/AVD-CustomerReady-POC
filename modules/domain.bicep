@@ -14,7 +14,7 @@ param adminPassword string
 param subnetId string
 param privateIpAddress string = '10.0.0.4'
 
-resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
+resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = {
   name: '${vmName}-nic'
   location: location
   properties: {
@@ -33,7 +33,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = {
   }
 }
 
-resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
+resource vm 'Microsoft.Compute/virtualMachines@2025-04-01' = {
   name: vmName
   location: location
   properties: {

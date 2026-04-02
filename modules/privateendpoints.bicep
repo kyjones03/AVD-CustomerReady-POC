@@ -21,12 +21,12 @@ param storageAccountName string
 param storageAccountId string
 
 // ── Private DNS Zone — Key Vault ──
-resource kvDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+resource kvDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
   name: 'privatelink.vaultcore.azure.net'
   location: 'global'
 }
 
-resource kvDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+resource kvDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
   parent: kvDnsZone
   name: '${kvName}-vnetlink'
   location: 'global'
@@ -39,12 +39,12 @@ resource kvDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@20
 }
 
 // ── Private DNS Zone — Azure Files ──
-resource fileDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+resource fileDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
   name: 'privatelink.file.${environment().suffixes.storage}'
   location: 'global'
 }
 
-resource fileDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+resource fileDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
   parent: fileDnsZone
   name: '${storageAccountName}-vnetlink'
   location: 'global'
@@ -57,7 +57,7 @@ resource fileDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@
 }
 
 // ── Private Endpoint — Key Vault ──
-resource kvPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = {
+resource kvPrivateEndpoint 'Microsoft.Network/privateEndpoints@2025-05-01' = {
   name: 'pe-${kvName}'
   location: location
   properties: {
@@ -78,7 +78,7 @@ resource kvPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = {
   }
 }
 
-resource kvPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = {
+resource kvPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-05-01' = {
   parent: kvPrivateEndpoint
   name: 'kvDnsZoneGroup'
   properties: {
@@ -94,7 +94,7 @@ resource kvPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
 }
 
 // ── Private Endpoint — Storage (file) ──
-resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' = {
+resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2025-05-01' = {
   name: 'pe-${storageAccountName}'
   location: location
   properties: {
@@ -115,7 +115,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-11-01' 
   }
 }
 
-resource storagePeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = {
+resource storagePeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2025-05-01' = {
   parent: storagePrivateEndpoint
   name: 'storageDnsZoneGroup'
   properties: {

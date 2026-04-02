@@ -7,7 +7,7 @@ param logAnalyticsName string
 param deployDcr bool = true
 param dcrName string = 'dcr-avd-poc'
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
   name: logAnalyticsName
   location: location
   properties: {
@@ -18,7 +18,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (deployDcr) {
+resource dcr 'Microsoft.Insights/dataCollectionRules@2024-03-11' = if (deployDcr) {
   name: dcrName
   location: location
   properties: {
@@ -27,9 +27,9 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (deployDcr
         {
           name: 'perfCounterDataSource'
           streams: [
-            'Microsoft-Perf'
+            'Microsoft-InsightsMetrics'
           ]
-          samplingFrequencyInSeconds: 30
+          samplingFrequencyInSeconds: 60
           counterSpecifiers: [
             '\\Processor Information(_Total)\\% Processor Time'
             '\\Memory\\Available MBytes'
@@ -38,20 +38,17 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = if (deployDcr
       ]
     }
     destinations: {
-      logAnalytics: [
-        {
-          workspaceResourceId: logAnalytics.id
-          name: 'logAnalyticsDestination'
-        }
-      ]
+      azureMonitorMetrics: {
+        name: 'azureMonitorMetrics-default'
+      }
     }
     dataFlows: [
       {
-        streams: [
-          'Microsoft-Perf'
-        ]
         destinations: [
-          'logAnalyticsDestination'
+          'azureMonitorMetrics-default'
+        ]
+        streams: [
+          'Microsoft-InsightsMetrics'
         ]
       }
     ]

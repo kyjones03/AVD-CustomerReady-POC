@@ -6,36 +6,37 @@
 param location string
 
 // AVD
+param deploymentScope string
 param hostPoolName string
-param hostPoolType string = 'Personal'
-param preferredAppGroupType string = 'Desktop'
+param hostPoolType string
+param preferredAppGroupType string
 param appGroupName string
 param workspaceName string
-param workspaceFriendlyName string = 'AVD POC Workspace'
+param workspaceFriendlyName string
 
 // Storage
-param deployStorage bool = true
+param deployStorage bool
 param storageAccountName string
-param fslogixShareName string = 'fslogixprofiles'
-param enableAadKerberosAuth bool = true
+param fslogixShareName string
+param enableAadKerberosAuth bool
 param deployPrivateEndpoints bool = false
 
 // Gallery
-param galleryName string = 'acgavdpoc'
+param galleryName string
 
 // VM
-param deployTemplateVm bool = true
-param vmName string = 'avdtemplate01'
+param deployTemplateVm bool
+param vmName string
 param vmSize string
 param vmAdminUsername string
 
 @secure()
 param vmAdminPassword string
 
-param vmImagePublisher string = 'MicrosoftWindowsDesktop'
-param vmImageOffer string = 'windows-11'
-param vmImageSku string = 'win11-23h2-ent'
-param enableTrustedLaunch bool = true
+param vmImagePublisher string
+param vmImageOffer string
+param vmImageSku string
+param enableTrustedLaunch bool
 param osDiskSizeGb int = 128
 
 // Networking
@@ -50,10 +51,14 @@ param baseTime string = utcNow()
 param logAnalyticsWorkspaceId string = ''
 
 // ── Host Pool ──
-resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2023-09-05' = {
+resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2026-01-01-preview' = {
   name: hostPoolName
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
+    deploymentScope: deploymentScope == 'Regional' ? 'Regional' : 'Geographical'
     hostPoolType: hostPoolType
     loadBalancerType: hostPoolType == 'Personal' ? 'Persistent' : 'BreadthFirst'
     preferredAppGroupType: preferredAppGroupType == 'Desktop' ? 'Desktop' : 'RemoteApp'
@@ -67,8 +72,8 @@ resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2023-09-05' = {
   }
 }
 
-// ── Scaling Plan ──
-resource scalingPlan 'Microsoft.DesktopVirtualization/scalingPlans@2023-09-05' = {
+// ── Scaling Plan (skipped for Regional scope — not yet supported) ──
+resource scalingPlan 'Microsoft.DesktopVirtualization/scalingPlans@2026-01-01-preview' = if (deploymentScope != 'Regional') {
   name: '${hostPoolName}-scaling'
   location: location
   properties: {
@@ -87,7 +92,7 @@ resource scalingPlan 'Microsoft.DesktopVirtualization/scalingPlans@2023-09-05' =
 }
 
 // ── Application Group ──
-resource appGroup 'Microsoft.DesktopVirtualization/applicationGroups@2023-09-05' = {
+resource appGroup 'Microsoft.DesktopVirtualization/applicationGroups@2026-01-01-preview' = {
   name: appGroupName
   location: location
   properties: {
@@ -97,10 +102,11 @@ resource appGroup 'Microsoft.DesktopVirtualization/applicationGroups@2023-09-05'
 }
 
 // ── Workspace ──
-resource workspace 'Microsoft.DesktopVirtualization/workspaces@2023-09-05' = {
+resource workspace 'Microsoft.DesktopVirtualization/workspaces@2025-11-01-preview' = {
   name: workspaceName
   location: location
   properties: {
+    deploymentScope: deploymentScope == 'Regional' ? 'Regional' : null
     friendlyName: workspaceFriendlyName
     applicationGroupReferences: [
       appGroup.id
@@ -157,7 +163,7 @@ resource workspaceDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-
 }
 
 // ── Storage Account (FSLogix) ──
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (deployStorage) {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2025-06-01' = if (deployStorage) {
   name: storageAccountName
   location: location
   kind: 'FileStorage'
@@ -182,12 +188,12 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (dep
   }
 }
 
-resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = if (deployStorage) {
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-06-01' = if (deployStorage) {
   parent: storageAccount
   name: 'default'
 }
 
-resource fslogixShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = if (deployStorage) {
+resource fslogixShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-06-01' = if (deployStorage) {
   parent: fileService
   name: fslogixShareName
   properties: {
@@ -197,14 +203,14 @@ resource fslogixShare 'Microsoft.Storage/storageAccounts/fileServices/shares@202
 }
 
 // ── Azure Compute Gallery ──
-resource gallery 'Microsoft.Compute/galleries@2023-07-03' = {
+resource gallery 'Microsoft.Compute/galleries@2025-03-03' = {
   name: galleryName
   location: location
   properties: {}
 }
 
 // ── Public IP (skipped when Bastion is deployed) ──
-resource publicIp 'Microsoft.Network/publicIPAddresses@2023-11-01' = if (deployTemplateVm && deployPublicIp) {
+resource publicIp 'Microsoft.Network/publicIPAddresses@2025-05-01' = if (deployTemplateVm && deployPublicIp) {
   name: publicIpName
   location: location
   sku: {
@@ -217,7 +223,7 @@ resource publicIp 'Microsoft.Network/publicIPAddresses@2023-11-01' = if (deployT
 }
 
 // ── NIC ──
-resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = if (deployTemplateVm) {
+resource nic 'Microsoft.Network/networkInterfaces@2025-05-01' = if (deployTemplateVm) {
   name: '${vmName}-nic'
   location: location
   properties: {
@@ -239,7 +245,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-11-01' = if (deployTempla
 }
 
 // ── Template VM ──
-resource templateVm 'Microsoft.Compute/virtualMachines@2024-03-01' = if (deployTemplateVm) {
+resource templateVm 'Microsoft.Compute/virtualMachines@2025-04-01' = if (deployTemplateVm) {
   name: vmName
   location: location
   properties: {
@@ -286,7 +292,7 @@ resource templateVm 'Microsoft.Compute/virtualMachines@2024-03-01' = if (deployT
 // ── Outputs ──
 output hostPoolId string = hostPool.id
 output hostPoolName string = hostPool.name
-output scalingPlanName string = scalingPlan.name
+output scalingPlanName string = deploymentScope != 'Regional' ? scalingPlan.name : ''
 output registrationTokenExpiry string = dateTimeAdd(baseTime, 'P30D')
 output appGroupId string = appGroup.id
 output workspaceId string = workspace.id
