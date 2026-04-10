@@ -3,3 +3,4 @@ Specifications/
 *.code-workspace
 quota.json
 .vscode/
+.mcp.json
