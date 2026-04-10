@@ -112,6 +112,7 @@ $tempVMConfig = Add-AzVMNetworkInterface -VM $tempVMConfig -Id $tempNic.Id
 New-AzVM -ResourceGroupName $resourceGroup -Location $location -VM $tempVMConfig
 
 # 5. Run Sysprep on temp VM
+# During this step, if it takes longer than 2-3 minutes, access the VM via Bastion and check the sysprep process errors in C:\Windows\System32\Sysprep\Panther\setupact.log and setuperr.log
 Invoke-AzVMRunCommand -ResourceGroupName $resourceGroup -VMName $tempVMName -CommandId 'RunPowerShellScript' -ScriptString 'Start-Process -FilePath "C:\Windows\System32\Sysprep\Sysprep.exe" -ArgumentList "/oobe /generalize /shutdown"'
 Write-Output "Waiting for VM to stop after sysprep..."
 do {
